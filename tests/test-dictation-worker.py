@@ -10,7 +10,28 @@ import unittest
 WORKER = Path(__file__).resolve().parents[1] / 'libexec/elevenlabs-dictate.py'
 
 class Dictation(unittest.TestCase):
-    def test_release_transcribes_and_types_without_clipboard(self):
+    def test_toggle_starts_then_stops_without_restarting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tools = root / 'bin'; tools.mkdir()
+            programs = {
+                'systemctl': '#!/bin/sh\ntest -d "$XDG_RUNTIME_DIR/elevenlabs-dictate"\n',
+                'systemd-run': '#!/bin/sh\nmkdir "$XDG_RUNTIME_DIR/elevenlabs-dictate"\necho start >> "$XDG_RUNTIME_DIR/starts"\n',
+            }
+            for name, body in programs.items():
+                path = tools / name; path.write_text(body); path.chmod(0o755)
+            env = dict(os.environ, PATH=str(tools)+os.pathsep+os.environ['PATH'], XDG_RUNTIME_DIR=str(root))
+            command = ['bash', str(WORKER.with_name('omarchy-elevenlabs-dictate')), 'toggle']
+            subprocess.run(command, env=env, check=True)
+            stop = root / 'elevenlabs-dictate/stop'
+            self.assertFalse(stop.exists())
+            subprocess.run(command, env=env, check=True)
+            self.assertTrue(stop.exists())
+            # Further presses during transcription must not launch another worker.
+            subprocess.run(command, env=env, check=True)
+            self.assertEqual((root / 'starts').read_text(), 'start\n')
+
+    def test_stop_transcribes_and_types_without_clipboard(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             runtime = root / 'runtime'; runtime.mkdir()

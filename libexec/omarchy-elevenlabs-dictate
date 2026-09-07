@@ -3,7 +3,15 @@ set -euo pipefail
 unit=elevenlabs-dictate.service
 exec 9>"${XDG_RUNTIME_DIR:?}/elevenlabs-dictate-control.lock"
 flock 9
-case "${1:-}" in
+action=${1:-toggle}
+if [[ $action == toggle ]]; then
+  if systemctl --user is-active --quiet "$unit"; then
+    action=stop
+  else
+    action=start
+  fi
+fi
+case "$action" in
   start)
     if ! systemctl --user is-active --quiet "$unit"; then
       systemd-run --user --quiet --collect --unit="$unit" \
@@ -16,5 +24,5 @@ case "${1:-}" in
       touch "$XDG_RUNTIME_DIR/elevenlabs-dictate/stop"
     fi
     ;;
-  *) echo 'Usage: elevenlabs-dictate start|stop' >&2; exit 2 ;;
+  *) echo 'Usage: elevenlabs-dictate start|stop|toggle' >&2; exit 2 ;;
 esac

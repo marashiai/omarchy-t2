@@ -37,7 +37,7 @@ omarchy-t2 setup --dry-run
 - Compatibility helper for Omarchy's T2 GPU toggle
 - Optional React DRM Touch Bar control center from the AminMarashi fork
 - Optional Qwen3-TTS reading on the Radeon through Vulkan, or ElevenLabs cloud TTS
-- Optional ElevenLabs Scribe v2 push-to-talk dictation
+- Optional ElevenLabs Scribe v2 toggle dictation
 
 The DSP input stays at 100%; a packaged PipeWire link-group resolver
 makes Omarchy's panel and media keys adjust the physical Apple speaker sink,
@@ -223,8 +223,8 @@ If OSTT is unavailable from your package mirror, use the installer documented at
 needed for ElevenLabs transcription. Python 3.11+, PipeWire (`pw-record`),
 systemd user services, and libnotify are also required; Omarchy supplies these.
 
-**Hold F9 or Alt+D to record, then release the key to transcribe with Scribe v2 and type into
-the focused application.** A brief notification indicates recording or
+**Press F9 or Alt+D to start recording, then press either shortcut again to stop,
+transcribe with Scribe v2, and type into the focused application.** A brief notification indicates recording or
 transcription; no terminal window opens and the clipboard stays unchanged.
 Keep the intended app focused until typing finishes. Use `omarchy-t2 stt disable`
 to remove the managed F9 and Alt+D bindings, or `stt enable` to restore them.

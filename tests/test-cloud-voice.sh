@@ -22,8 +22,8 @@ cmd_tts setup --provider elevenlabs --yes
 cmd_stt setup --yes
 [[ $(grep -c '^require("hypr.omarchy-t2")' "$XDG_CONFIG_HOME/hypr/hyprland.lua") == 1 ]]
 grep -Fq '"omarchy-elevenlabs-read"' "$module"
-grep -Fq '"omarchy-elevenlabs-dictate start"' "$module"
-grep -Fq '"omarchy-elevenlabs-dictate stop", { release = true }' "$module"
+grep -Fq 'o.bind("F9", "Start or stop dictation", "omarchy-elevenlabs-dictate toggle")' "$module"
+grep -Fq 'o.bind("ALT + D", "Start or stop dictation", "omarchy-elevenlabs-dictate toggle")' "$module"
 grep -Fq 'TTS_PROVIDER=elevenlabs' "$USER_CONFIG"
 grep -Fq 'STT_ENABLED=true' "$USER_CONFIG"
 # Switching to Qwen must preserve independently enabled dictation.

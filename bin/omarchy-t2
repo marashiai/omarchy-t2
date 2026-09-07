@@ -483,11 +483,9 @@ end
 
 if $STT_ENABLED then
   hl.unbind("F9")
-  o.bind("F9", "Start dictation (hold to talk)", "omarchy-elevenlabs-dictate start")
-  o.bind("F9", "Finish dictation (release)", "omarchy-elevenlabs-dictate stop", { release = true })
+  o.bind("F9", "Start or stop dictation", "omarchy-elevenlabs-dictate toggle")
   hl.unbind("ALT + D")
-  o.bind("ALT + D", "Start dictation (hold to talk)", "omarchy-elevenlabs-dictate start")
-  o.bind("ALT + D", "Finish dictation (release)", "omarchy-elevenlabs-dictate stop", { release = true })
+  o.bind("ALT + D", "Start or stop dictation", "omarchy-elevenlabs-dictate toggle")
 end
 EOF
   if [[ ! -f $target ]] || ! grep -Fq -- '-- Managed by omarchy-t2.' "$target"; then
@@ -577,7 +575,7 @@ cloud_voice_setup() {
     note "Use ElevenLabs George / Flash v2.5. ALT+R reads, ALT+E pauses/resumes, ALT+SHIFT+R reads the clipboard."
     note "This replaces the read-aloud bindings, including Qwen when enabled."
   else
-    note "Use ElevenLabs Scribe v2. Hold F9 or ALT+D to record; release to transcribe and type into the focused app."
+    note "Use ElevenLabs Scribe v2. Press F9 or ALT+D to start recording; press again to stop, transcribe and type into the focused app."
     note "This replaces any existing F9 and ALT+D bindings. Recording runs without a terminal popup."
   fi
   note "Selected text or recorded audio is sent to ElevenLabs using your account credits."
