@@ -44,6 +44,9 @@ makes Omarchy's panel and media keys adjust the physical Apple speaker sink,
 which starts at 100%.
 Microphone selection remains automatic: external microphones take precedence
 when connected, with the processed internal microphone as the fallback.
+The internal microphone DSP stays pinned to the built-in array and waits if
+that source is unavailable, preventing it from being rerouted to a silent
+Bluetooth input.
 Enabling microphone DSP clears the source preference saved by version 0.1.0;
 select a source again afterward only if you want to override automatic routing.
 The configuration includes a hard limiter, but model-specific speaker tuning is
