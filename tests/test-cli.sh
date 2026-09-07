@@ -86,6 +86,12 @@ done
 
 # The default install must work without a compiled engine or its licenses.
 make -s -C "$project_dir" DESTDIR="$test_dir/no-tts" DSP_SOURCE="$dsp" install
+for executable in omarchy-elevenlabs-read omarchy-elevenlabs-dictate; do
+  [[ -x $test_dir/no-tts/usr/bin/$executable ]] || fail "missing cloud voice launcher: $executable"
+done
+for helper in elevenlabs-read.py elevenlabs-dictate.py elevenlabs_auth.py; do
+  assert_exists "$test_dir/no-tts/usr/lib/omarchy-t2/$helper"
+done
 assert_exists "$test_dir/no-tts/usr/bin/omarchy-t2"
 assert_not_exists "$test_dir/no-tts/usr/lib/omarchy-t2/qwen-tts"
 assert_not_exists "$test_dir/no-tts/usr/share/licenses/omarchy-t2/qwentts.cpp-LICENSE"
@@ -251,7 +257,7 @@ assert_exists "$home/.local/share/omarchy-t2/tts/models/$TTS_CODEC"
 assert_file_contains "$home/.config/omarchy-t2/config" 'TTS_ENABLED=true'
 assert_file_contains "$home/.config/hypr/omarchy-t2.lua" 'hl.unbind("ALT + R")'
 assert_file_contains "$home/.config/hypr/omarchy-t2.lua" 'o.bind("ALT + E", "Pause or resume selected text", "omarchy-tts toggle-pause")'
-"$cli" tts status | grep -q '^bindings=unavailable models=ready engine=ready$'
+"$cli" tts status | grep -q '^provider=qwen bindings=unavailable models=ready engine=ready$'
 "$cli" tts disable
 assert_file_contains "$home/.config/omarchy-t2/config" 'TTS_ENABLED=false'
 assert_file_contains "$home/.config/hypr/omarchy-t2.lua" 'if false then'

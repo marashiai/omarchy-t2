@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+unit=elevenlabs-read.service
+if [[ ${1:-} == --stop ]]; then
+  systemctl --user kill --kill-whom=all --signal=SIGCONT "$unit" 2>/dev/null || true
+  systemctl --user stop "$unit" 2>/dev/null || true
+  exit 0
+fi
+if [[ ${1:-} == --pause ]]; then
+  if systemctl --user is-active --quiet "$unit"; then
+    pid=$(systemctl --user show "$unit" --property=MainPID --value)
+    if [[ -r /proc/$pid/status ]] && grep -q '^State:.*T' "/proc/$pid/status"; then
+      systemctl --user kill --kill-whom=all --signal=SIGCONT "$unit"
+      notify-send 'Read aloud' 'Resumed'
+    else
+      systemctl --user kill --kill-whom=all --signal=SIGSTOP "$unit"
+      notify-send 'Read aloud' 'Paused — Option+E to resume'
+    fi
+  fi
+  exit 0
+fi
+if systemctl --user is-active --quiet "$unit"; then
+  systemctl --user kill --kill-whom=all --signal=SIGCONT "$unit" || true
+  systemctl --user stop "$unit"
+fi
+systemd-run --user --quiet --collect --unit="$unit" \
+  --property=RuntimeDirectory=elevenlabs-read --property=RuntimeDirectoryMode=0700 --property=UMask=0077 \
+  /usr/bin/python3 "${OMARCHY_T2_LIB_DIR:-/usr/lib/omarchy-t2}/elevenlabs-read.py" "$@"

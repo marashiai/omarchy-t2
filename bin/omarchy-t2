@@ -50,6 +50,9 @@ Usage:
   omarchy-t2 gpu [status | toggle | integrated | dedicated]
   omarchy-t2 touchbar [status | analyze | setup | update | enable | disable | uninstall]
   omarchy-t2 tts [status | setup [--yes] [--dry-run] | enable | disable | remove [--yes]]
+  omarchy-t2 tts setup --provider <qwen|elevenlabs> [--yes] [--dry-run]
+  omarchy-t2 tts auth
+  omarchy-t2 stt [status | setup [--yes] [--dry-run] | auth | enable | disable]
   omarchy-t2 restore [--yes]
   omarchy-t2 version
 
@@ -269,6 +272,8 @@ load_input_config() {
   KEYBOARD_VARIANT=mac-iso
   TAP_TO_CLICK=false
   TTS_ENABLED=false
+  TTS_PROVIDER=qwen
+  STT_ENABLED=false
   if [[ -r $USER_CONFIG ]]; then
     # shellcheck source=/dev/null
     source "$USER_CONFIG"
@@ -446,6 +451,12 @@ write_input_module() {
   local target="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/omarchy-t2.lua"
   local temporary
   load_input_config
+  local tts_read="omarchy-tts read" tts_pause="omarchy-tts toggle-pause"
+  case $TTS_PROVIDER in
+    qwen) ;;
+    elevenlabs) tts_read="omarchy-elevenlabs-read"; tts_pause="omarchy-elevenlabs-read --pause" ;;
+    *) die "unknown TTS provider: $TTS_PROVIDER" ;;
+  esac
   temporary=$(mktemp)
   cat >"$temporary" <<EOF
 -- Managed by omarchy-t2. Use omarchy-t2 input ... to change these values.
@@ -462,8 +473,18 @@ hl.config({
 if $TTS_ENABLED then
   hl.unbind("ALT + R")
   hl.unbind("ALT + E")
-  o.bind("ALT + R", "Read selected text from beginning", "omarchy-tts read")
-  o.bind("ALT + E", "Pause or resume selected text", "omarchy-tts toggle-pause")
+  o.bind("ALT + R", "Read selected text from beginning", "$tts_read")
+  o.bind("ALT + E", "Pause or resume selected text", "$tts_pause")
+  if "$TTS_PROVIDER" == "elevenlabs" then
+    hl.unbind("ALT + SHIFT + R")
+    o.bind("ALT + SHIFT + R", "Read clipboard aloud", "omarchy-elevenlabs-read --clipboard")
+  end
+end
+
+if $STT_ENABLED then
+  hl.unbind("F9")
+  o.bind("F9", "Start dictation (hold to talk)", "omarchy-elevenlabs-dictate start")
+  o.bind("F9", "Finish dictation (release)", "omarchy-elevenlabs-dictate stop", { release = true })
 end
 EOF
   if [[ ! -f $target ]] || ! grep -Fq -- '-- Managed by omarchy-t2.' "$target"; then
@@ -495,6 +516,9 @@ EOF
 reload_hyprland() {
   if runtime && command -v hyprctl >/dev/null 2>&1 && [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
     hyprctl reload >/dev/null
+    local errors
+    errors=$(hyprctl configerrors)
+    [[ -z $errors ]] || die "Hyprland configuration errors: $errors"
   fi
 }
 
@@ -524,6 +548,81 @@ input_tap() {
   esac
   input_apply
   note "Tap-to-click: $value"
+}
+
+cloud_voice_require() {
+  local kind=$1 command
+  local commands=(python3 systemctl systemd-run notify-send)
+  if [[ $kind == tts ]]; then commands+=(mpv wl-paste); else commands+=(pw-record ostt wtype flock); fi
+  for command in "${commands[@]}"; do
+    command -v "$command" >/dev/null || { echo "missing $command; see the ElevenLabs setup dependencies in README.md" >&2; return 1; }
+  done
+}
+
+cloud_voice_stop() {
+  runtime || return 0
+  local unit=elevenlabs-read.service
+  [[ $1 == stt ]] && unit=elevenlabs-dictate.service
+  systemctl --user kill --kill-whom=all --signal=SIGCONT "$unit" 2>/dev/null || true
+  systemctl --user stop "$unit" 2>/dev/null || true
+}
+
+cloud_voice_setup() {
+  local kind=$1 assume_yes=${2:-false}
+  cloud_voice_require "$kind"
+  if [[ $kind == tts ]]; then
+    note "Use ElevenLabs George / Flash v2.5. ALT+R reads, ALT+E pauses/resumes, ALT+SHIFT+R reads the clipboard."
+    note "This replaces the read-aloud bindings, including Qwen when enabled."
+  else
+    note "Use ElevenLabs Scribe v2. Hold F9 to record; release to transcribe and type into the focused app."
+    note "This replaces any existing F9 binding. Recording runs without a terminal popup."
+  fi
+  note "Selected text or recorded audio is sent to ElevenLabs using your account credits."
+  confirm "Enable ElevenLabs $kind?" "$assume_yes" || return 0
+  [[ $DRY_RUN == true ]] && { note "Dry run complete. No changes made."; return 0; }
+  if [[ $kind == tts ]]; then
+    cloud_voice_stop tts
+    local qwen_launcher="$ROOT/usr/bin/omarchy-tts"
+    [[ -x $qwen_launcher ]] && "$qwen_launcher" stop >/dev/null 2>&1 || true
+    write_setting "$USER_CONFIG" TTS_PROVIDER elevenlabs user
+    tts_set_enabled true
+  else
+    write_setting "$USER_CONFIG" STT_ENABLED true user
+    input_apply
+  fi
+  note "Setup complete. Use 'omarchy-t2 $kind auth' to enter your key privately if not already configured."
+}
+
+cmd_stt() {
+  require_supported_model
+  local action=${1:-status} assume_yes=false
+  shift || true
+  case $action in
+    auth) [[ $# == 0 ]] || die "usage: omarchy-t2 stt auth"; python3 "$LIB_DIR/elevenlabs_auth.py" ;;
+    status)
+      [[ $# == 0 ]] || die "usage: omarchy-t2 stt status"
+      load_input_config
+      printf 'provider=elevenlabs model=scribe_v2 configured.enabled=%s\n' "$STT_ENABLED"
+      ;;
+    setup|enable)
+      while (($#)); do
+        case $1 in
+          --yes|-y) assume_yes=true ;;
+          --dry-run) DRY_RUN=true ;;
+          *) die "unknown STT setup option: $1" ;;
+        esac
+        shift
+      done
+      cloud_voice_setup stt "$assume_yes"
+      ;;
+    disable)
+      [[ $# == 0 ]] || die "usage: omarchy-t2 stt disable"
+      cloud_voice_stop stt
+      write_setting "$USER_CONFIG" STT_ENABLED false user
+      input_apply
+      ;;
+    *) die "usage: omarchy-t2 stt [status | setup [--yes] [--dry-run] | auth | enable | disable]" ;;
+  esac
 }
 
 tts_models_ready() {
@@ -569,17 +668,23 @@ tts_set_enabled() {
 }
 
 tts_setup() {
-  local assume_yes=false
+  local assume_yes=false provider=qwen
 
   while (($#)); do
     case $1 in
     --yes|-y) assume_yes=true ;;
     --dry-run) DRY_RUN=true ;;
+    --provider) [[ $# -ge 2 ]] || die "--provider requires qwen or elevenlabs"; provider=$2; shift ;;
     *) die "unknown TTS setup option: $1" ;;
     esac
     shift
   done
 
+  case $provider in
+    elevenlabs) cloud_voice_setup tts "$assume_yes"; return ;;
+    qwen) ;;
+    *) die "unknown TTS provider: $provider" ;;
+  esac
   tts_require_runtime
   cat <<EOF
 Omarchy T2 will download and verify about 1.4 GB of Qwen3-TTS Q4 models,
@@ -599,11 +704,20 @@ EOF
   install -d -m0755 "$TTS_MODEL_DIR"
   tts_download_model "$TTS_TALKER" "$TTS_TALKER_URL" "$TTS_TALKER_SHA256"
   tts_download_model "$TTS_CODEC" "$TTS_CODEC_URL" "$TTS_CODEC_SHA256"
+  cloud_voice_stop tts
+  write_setting "$USER_CONFIG" TTS_PROVIDER qwen user
   tts_set_enabled true
   note "GPU text-to-speech is ready. Select text and press ALT + R."
 }
 
 tts_enable() {
+  load_input_config
+  if [[ $TTS_PROVIDER == elevenlabs ]]; then
+    cloud_voice_require tts
+    tts_set_enabled true
+    note "ElevenLabs text-to-speech enabled."
+    return
+  fi
   tts_require_runtime
   tts_models_ready || die "TTS models are missing; run 'omarchy-t2 tts setup'"
   tts_set_enabled true
@@ -611,10 +725,11 @@ tts_enable() {
 }
 
 tts_disable() {
+  cloud_voice_stop tts
   local launcher="$ROOT/usr/bin/omarchy-tts"
   [[ -x $launcher ]] && "$launcher" stop >/dev/null 2>&1 || true
   tts_set_enabled false
-  note "GPU text-to-speech disabled."
+  note "Text-to-speech disabled."
 }
 
 tts_remove() {
@@ -1031,7 +1146,7 @@ try:
     bindings = json.load(sys.stdin)
     if not isinstance(bindings, list):
         sys.exit(1)
-    print("enabled" if any(b.get("arg") == "omarchy-tts read" for b in bindings) else "disabled")
+    print("enabled" if any(b.get("arg") in ("omarchy-tts read", "omarchy-elevenlabs-read") for b in bindings) else "disabled")
 except (ValueError, AttributeError, TypeError):
     sys.exit(1)
 ' 2>/dev/null; then return; fi
@@ -1053,7 +1168,13 @@ audio_actual_state() {
 }
 
 cmd_status() {
-  local actual_battery
+  local actual_battery tts_details
+  load_input_config
+  if [[ $TTS_PROVIDER == elevenlabs ]]; then
+    tts_details="provider: elevenlabs; cloud"
+  else
+    tts_details="models: $(tts_models_ready && echo ready || echo missing); engine: $([[ -x $TTS_ENGINE ]] && echo ready || echo missing)"
+  fi
   actual_battery=$(battery_actual_limit)
   [[ $actual_battery == unavailable ]] || actual_battery+='%'
   input_actual_state
@@ -1064,7 +1185,8 @@ Fan profile:    $(fan_installed_profile) (installed config; service: $(service_a
 Power policy:   $(service_actual_state power-optimizer.service)
 Keyboard:       $KEYBOARD_LAYOUT${KEYBOARD_VARIANT:+/$KEYBOARD_VARIANT}
 Tap-to-click:   $TAP_TO_CLICK
-Text-to-speech: $(tts_actual_state) (bindings; models: $(tts_models_ready && echo ready || echo missing); engine: $([[ -x $TTS_ENGINE ]] && echo ready || echo missing))
+Text-to-speech: $(tts_actual_state) (bindings; $tts_details)
+Speech-to-text: configured.enabled=$STT_ENABLED (ElevenLabs Scribe v2)
 Touch Bar UI:   $(touchbar_service_state) (source: $(touchbar_source_state))
 Speaker DSP:    $(audio_actual_state sinks effect_input.filter-chain-speakers)
 Microphone DSP: $(audio_actual_state sources effect_output.filter-chain-t2-mic)
@@ -1098,10 +1220,16 @@ cmd_doctor() {
   doctor_check "Microphone DSP config" test -e "${XDG_CONFIG_HOME:-$HOME/.config}/pipewire/pipewire.conf.d/10-omarchy-t2-mic.conf" || failures=$((failures + 1))
   doctor_check "Speaker DSP node" pactl get-sink-info effect_input.filter-chain-speakers || failures=$((failures + 1))
   doctor_check "Microphone DSP node" pactl get-source-info effect_output.filter-chain-t2-mic || failures=$((failures + 1))
-  if [[ $TTS_ENABLED == true ]]; then
+  if [[ $TTS_ENABLED == true && $TTS_PROVIDER == qwen ]]; then
     doctor_check "TTS engine" test -x "$TTS_ENGINE" || failures=$((failures + 1))
     doctor_check "TTS models" tts_models_ready || failures=$((failures + 1))
     doctor_check "Radeon Vulkan driver" test -r "$ROOT/usr/share/vulkan/icd.d/radeon_icd.json" || failures=$((failures + 1))
+  fi
+  if [[ $TTS_ENABLED == true && $TTS_PROVIDER == elevenlabs ]]; then
+    doctor_check "ElevenLabs TTS dependencies" cloud_voice_require tts || failures=$((failures + 1))
+  fi
+  if [[ $STT_ENABLED == true ]]; then
+    doctor_check "Speech-to-text dependencies" cloud_voice_require stt || failures=$((failures + 1))
   fi
   ((failures == 0)) || return 1
 }
@@ -1127,6 +1255,9 @@ cmd_restore() {
   [[ ${1:-} == --yes || ${1:-} == -y ]] && assume_yes=true
   require_supported_model
   confirm "Restore replaced files and remove downloaded TTS models?" "$assume_yes" || exit 0
+
+  cloud_voice_stop tts
+  cloud_voice_stop stt
 
   user_systemctl disable --now omarchy-t2-mic-guard.service >/dev/null 2>&1 || true
   [[ -x $tts_launcher ]] && "$tts_launcher" stop >/dev/null 2>&1 || true
@@ -1292,13 +1423,20 @@ cmd_gpu() {
 
 cmd_tts() {
   require_supported_model
+  load_input_config
   case ${1:-status} in
   status)
-    printf 'bindings=%s models=%s engine=%s\n' \
+    if [[ $TTS_PROVIDER == elevenlabs ]]; then
+      printf 'provider=elevenlabs bindings=%s model=eleven_flash_v2_5 (default; optional voice config override)\n' "$(tts_actual_state)"
+      return
+    fi
+    printf 'provider=%s bindings=%s models=%s engine=%s\n' \
+      "$TTS_PROVIDER" \
       "$(tts_actual_state)" \
       "$(tts_models_ready && echo ready || echo missing)" \
       "$([[ -x $TTS_ENGINE ]] && echo ready || echo missing)"
     ;;
+  auth) [[ $# == 1 ]] || die "usage: omarchy-t2 tts auth"; python3 "$LIB_DIR/elevenlabs_auth.py" ;;
   setup)
     shift
     tts_setup "$@"
@@ -1348,6 +1486,7 @@ bluetooth) cmd_bluetooth "$@" ;;
 gpu) cmd_gpu "$@" ;;
 touchbar) cmd_touchbar "$@" ;;
 tts) cmd_tts "$@" ;;
+stt) cmd_stt "$@" ;;
 restore) cmd_restore "$@" ;;
 version|--version|-v) echo "omarchy-t2 $VERSION" ;;
 help|--help|-h) usage ;;

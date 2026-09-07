@@ -36,7 +36,8 @@ omarchy-t2 setup --dry-run
 - Optional Bluetooth passkey display and A2DP auto-connect
 - Compatibility helper for Omarchy's T2 GPU toggle
 - Optional React DRM Touch Bar control center from the AminMarashi fork
-- Optional Qwen3-TTS reading on the Radeon through Vulkan
+- Optional Qwen3-TTS reading on the Radeon through Vulkan, or ElevenLabs cloud TTS
+- Optional ElevenLabs Scribe v2 push-to-talk dictation
 
 The DSP input stays at 100%; a packaged PipeWire link-group resolver
 makes Omarchy's panel and media keys adjust the physical Apple speaker sink,
@@ -173,6 +174,72 @@ The setup unbinds those keys before installing its bindings, stores models in
 `~/.local/share/omarchy-t2/tts`, and leaves the model files out of the package.
 Disable the bindings without deleting models with `omarchy-t2 tts disable`.
 Remove the downloaded models with `omarchy-t2 tts remove`.
+
+## ElevenLabs text-to-speech and dictation
+
+ElevenLabs is an optional alternative to Qwen for reading text aloud. Dictation
+is a separate option; it also works when Qwen is selected for TTS. Neither is
+enabled by the default hardware setup, and no API key is included in the package.
+
+For cloud TTS, install the playback and selection dependencies, enter your key
+in the hidden terminal prompt, and select the provider:
+
+```bash
+omarchy pkg add mpv wl-clipboard
+omarchy-t2 tts auth
+omarchy-t2 tts setup --provider elevenlabs
+```
+
+- **Option/Alt + R:** read the primary selection from the beginning.
+- **Option/Alt + E:** pause or resume.
+- **Option/Alt + Shift + R:** read the clipboard in apps without primary selection.
+
+The default voice is **George**, using **Flash v2.5**. Override `voice` and
+`model` in `~/.config/omarchy-t2/elevenlabs-voice.json` if desired:
+
+```json
+{"voice": "JBFqnCBsd6RMkjVDRZzb", "model": "eleven_flash_v2_5"}
+```
+
+To switch back, run `omarchy-t2 tts setup --provider qwen`; it uses the Qwen
+engine and model setup described above. `tts enable` reuses the saved provider,
+while `tts disable` removes the managed TTS bindings and stops speech. Switching
+providers preserves downloaded Qwen models and the independently enabled dictation.
+
+For speech-to-text, install **OSTT 0.0.25 or later**, plus typing support:
+
+```bash
+omarchy pkg aur add ostt-bin
+omarchy pkg add wtype
+omarchy-t2 stt auth
+omarchy-t2 stt setup
+```
+
+If OSTT is unavailable from your package mirror, use the installer documented at
+[ostt.ai](https://ostt.ai/guide/installation). No local model or GPU build is
+needed for ElevenLabs transcription. Python 3.11+, PipeWire (`pw-record`),
+systemd user services, and libnotify are also required; Omarchy supplies these.
+
+**Hold F9 to record, then release it to transcribe with Scribe v2 and type into
+the focused application.** A brief notification indicates recording or
+transcription; no terminal window opens and the clipboard stays unchanged.
+Keep the intended app focused until typing finishes. Use `omarchy-t2 stt disable`
+to remove the managed F9 bindings, or `stt enable` to restore them.
+
+Setup announces which keys it replaces and supports `--dry-run` and `--yes`.
+These bindings replace existing assignments for the same keys, including Qwen
+read-aloud or Voxtype F9 bindings. Disable older personal voice bindings in
+`~/.config/hypr/bindings.lua` if migrating from standalone scripts.
+
+Both `tts auth` and `stt auth` save the same private OSTT-compatible credential
+file at `$XDG_DATA_HOME/ostt/credentials` (default
+`~/.local/share/ostt/credentials`), with permissions `0600`. Existing OSTT
+ElevenLabs credentials work without re-entry. Credentials are retained when
+features are disabled or hardware configuration is restored. Never add that
+file to Git. Selected text and microphone recordings go to ElevenLabs and use
+your account credits; some library voices require a paid plan. Temporary worker
+audio and transcripts are kept in private runtime directories. OSTT may also
+retain transcription history according to its own settings.
 
 `omarchy-t2 status` reads the hardware battery limit, live service state,
 Hyprland input options and TTS bindings, and available audio DSP nodes. Fan

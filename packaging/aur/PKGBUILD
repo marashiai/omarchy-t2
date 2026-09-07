@@ -44,6 +44,9 @@ depends=(
 _with_qwen_tts=${WITH_QWEN_TTS:-0}
 makedepends=('patch')
 optdepends=(
+  'mpv: optional ElevenLabs text-to-speech playback'
+  'wtype: optional speech-to-text typing'
+  'ostt-bin: optional ElevenLabs speech-to-text transcription'
   'ffmpeg: optional text-to-speech playback'
   'libnotify: optional text-to-speech notifications'
   'vulkan-radeon: optional text-to-speech on Radeon'

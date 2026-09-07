@@ -28,6 +28,11 @@ ifeq ($(WITH_QWEN_TTS),1)
 endif
 	install -Dm755 bin/omarchy-t2 "$(DESTDIR)$(PREFIX)/bin/omarchy-t2"
 	install -Dm755 libexec/omarchy-tts "$(DESTDIR)$(PREFIX)/bin/omarchy-tts"
+	install -Dm755 libexec/omarchy-elevenlabs-read "$(DESTDIR)$(PREFIX)/bin/omarchy-elevenlabs-read"
+	install -Dm755 libexec/omarchy-elevenlabs-dictate "$(DESTDIR)$(PREFIX)/bin/omarchy-elevenlabs-dictate"
+	install -Dm755 libexec/elevenlabs-read.py "$(PACKAGE_LIB)/elevenlabs-read.py"
+	install -Dm755 libexec/elevenlabs-dictate.py "$(PACKAGE_LIB)/elevenlabs-dictate.py"
+	install -Dm755 libexec/elevenlabs_auth.py "$(PACKAGE_LIB)/elevenlabs_auth.py"
 	install -Dm755 libexec/omarchy-tts-queue.py "$(PACKAGE_LIB)/tts-queue"
 	install -Dm755 libexec/omarchy-t2-power-optimizer "$(PACKAGE_LIB)/power-optimizer"
 	install -Dm755 libexec/omarchy-t2-fan-control "$(PACKAGE_LIB)/fan-control"
@@ -70,6 +75,9 @@ endif
 	install -Dm644 README.md "$(DESTDIR)$(PREFIX)/share/doc/omarchy-t2/README.md"
 
 test:
+	bash tests/test-cloud-voice.sh
+	python3 tests/test-elevenlabs-auth.py
+	python3 tests/test-dictation-worker.py
 	bash tests/test-status.sh
 	python3 tests/test-tts-queue.py
 	bash tests/test-audio-output-sink.sh
