@@ -223,11 +223,11 @@ If OSTT is unavailable from your package mirror, use the installer documented at
 needed for ElevenLabs transcription. Python 3.11+, PipeWire (`pw-record`),
 systemd user services, and libnotify are also required; Omarchy supplies these.
 
-**Hold F9 to record, then release it to transcribe with Scribe v2 and type into
+**Hold F9 or Alt+D to record, then release the key to transcribe with Scribe v2 and type into
 the focused application.** A brief notification indicates recording or
 transcription; no terminal window opens and the clipboard stays unchanged.
 Keep the intended app focused until typing finishes. Use `omarchy-t2 stt disable`
-to remove the managed F9 bindings, or `stt enable` to restore them.
+to remove the managed F9 and Alt+D bindings, or `stt enable` to restore them.
 
 Setup announces which keys it replaces and supports `--dry-run` and `--yes`.
 These bindings replace existing assignments for the same keys, including Qwen

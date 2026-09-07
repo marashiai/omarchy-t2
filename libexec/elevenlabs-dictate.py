@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Headless F9 recording; OSTT transcription is typed via Wayland."""
+"""Headless push-to-talk recording; OSTT transcription is typed via Wayland."""
 import os,pathlib,signal,subprocess,time,shutil
 root=pathlib.Path(os.environ['RUNTIME_DIRECTORY'])
 
@@ -11,7 +11,7 @@ def main():
     transcript=root/'transcript.txt'
     recorder=subprocess.Popen(['pw-record','--rate','16000','--channels','1',str(audio)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     try:
-        notify('Recording — release F9 to finish')
+        notify('Recording — release the dictation key to finish')
         start=time.monotonic()
         while not (root/'stop').exists():
             time.sleep(.05)
