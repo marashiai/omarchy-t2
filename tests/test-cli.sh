@@ -84,12 +84,24 @@ for kind in tweeters woofers; do
   done
 done
 
+# The default install must work without a compiled engine or its licenses.
+make -s -C "$project_dir" DESTDIR="$test_dir/no-tts" DSP_SOURCE="$dsp" install
+assert_exists "$test_dir/no-tts/usr/bin/omarchy-t2"
+assert_not_exists "$test_dir/no-tts/usr/lib/omarchy-t2/qwen-tts"
+assert_not_exists "$test_dir/no-tts/usr/share/licenses/omarchy-t2/qwentts.cpp-LICENSE"
+printf 'MacBookPro16,1\n' >"$test_dir/model"
+if OMARCHY_T2_DMI_PATH="$test_dir/model" OMARCHY_T2_ROOT="$test_dir/no-tts" "$test_dir/no-tts/usr/bin/omarchy-t2" tts enable >"$test_dir/no-tts-error" 2>&1; then
+  fail "TTS enabled without its optional engine"
+fi
+assert_file_contains "$test_dir/no-tts-error" 'optional Qwen TTS engine is not installed'
+
 printf '#!/bin/sh\nexit 0\n' >"$qwen_tts"
 chmod 0755 "$qwen_tts"
 
 make -s -C "$project_dir" \
   DESTDIR="$root" \
   DSP_SOURCE="$dsp" \
+  WITH_QWEN_TTS=1 \
   QWEN_TTS_BINARY="$qwen_tts" \
   QWEN_TTS_LICENSE="$dsp/LICENSE" \
   GGML_LICENSE="$dsp/LICENSE" \
@@ -143,6 +155,23 @@ OMARCHY_T2_TTS_TALKER_SHA256=$(sha256sum "$test_dir/$TTS_TALKER" | awk '{print $
 export OMARCHY_T2_TTS_CODEC_SHA256
 OMARCHY_T2_TTS_CODEC_SHA256=$(sha256sum "$test_dir/$TTS_CODEC" | awk '{print $1}')
 
+install -d "$home/.config/pipewire/filter-chain.conf.d"
+printf 'node.name = effect_output.filter-chain-t2-mic\n' >"$root/etc/pipewire/pipewire.conf.d/old-microphone.conf"
+printf 'previous user speaker profile\n' >"$home/.config/pipewire/filter-chain.conf.d/10-t2_161_speakers.conf"
+ln -s /missing/previous-mic.conf "$home/.config/pipewire/pipewire.conf.d/10-t2-mic.conf"
+printf 'unrelated audio settings\n' >"$home/.config/pipewire/pipewire.conf.d/99-custom.conf"
+default_tuning_paths=(
+  pipewire/omarchy-speaker-tuning.conf
+  pipewire/omarchy-speaker-tuning.conf.d/90-tuning.conf
+  systemd/user/omarchy-speaker-tuning.service
+  pipewire/pipewire.conf.d/90-omarchy-speaker-tuning.conf
+  pipewire/filter-chain.conf.d/90-omarchy-speaker-tuning.conf
+  wireplumber/wireplumber.conf.d/90-omarchy-speaker-tuning.conf
+)
+for profile in "${default_tuning_paths[@]}"; do
+  install -d "$home/.config/$(dirname "$profile")"
+  printf 'previous default: %s\n' "$profile" >"$home/.config/$profile"
+done
 cli="$root/usr/bin/omarchy-t2"
 "$cli" version | grep -q '^omarchy-t2 0.4.0$'
 "$cli" setup --dry-run
@@ -150,6 +179,10 @@ assert_file_contains "$root/etc/t2fand.conf" 'old fan config'
 assert_file_contains "$root/etc/modprobe.d/apple-gmux.conf" 'force_igd=n'
 assert_not_exists "$home/.config/hypr/omarchy-t2.lua"
 "$cli" setup --yes
+for profile in "${default_tuning_paths[@]}"; do
+  assert_file_contains "$home/.config/$profile" "previous default: $profile"
+  assert_not_exists "$home/.local/state/omarchy-t2/backups/home/.config/$profile"
+done
 
 assert_exists "$root/etc/udev/rules.d/99-omarchy-t2-touchpad.rules"
 assert_file_contains "$root/usr/bin/omarchy-tts" 'qwen-talker-1.7b-customvoice-Q4_K_M.gguf'
@@ -189,7 +222,14 @@ assert_file_contains "$home/.config/hypr/hyprland.lua" '-- omarchy-t2:start'
 assert_file_contains "$home/.config/hypr/omarchy-t2.lua" 'kb_variant = "mac-iso"'
 assert_file_contains "$home/.config/hypr/omarchy-t2.lua" 'tap_to_click = false'
 assert_exists "$home/.config/pipewire/pipewire.conf.d/10-omarchy-t2-mic.conf"
-assert_exists "$home/.config/systemd/user/bt-agent.service.d/omarchy-t2.conf"
+assert_not_exists "$home/.config/systemd/user/bt-agent.service.d/omarchy-t2.conf"
+assert_file_contains "$home/.config/systemd/user/bt-agent.service.d/upstream-fix.conf" '/old-agent'
+assert_exists "$root/etc/pipewire/pipewire.conf.d/old-microphone.conf"
+assert_exists "$home/.config/pipewire/filter-chain.conf.d/10-t2_161_speakers.conf"
+assert_exists "$home/.config/pipewire/pipewire.conf.d/10-t2-mic.conf"
+assert_file_contains "$home/.config/pipewire/pipewire.conf.d/99-custom.conf" 'unrelated audio settings'
+# Re-enabling audio must leave existing profiles untouched.
+"$cli" audio enable
 mic_config="$home/.config/pipewire/pipewire.conf.d/10-omarchy-t2-mic.conf"
 assert_file_contains "$mic_config" 'target.object        = "alsa_input.pci-0000_04_00.3.HiFi__Mic__source"'
 assert_file_contains "$mic_config" 'priority.session    = 1800'
@@ -211,7 +251,7 @@ assert_exists "$home/.local/share/omarchy-t2/tts/models/$TTS_CODEC"
 assert_file_contains "$home/.config/omarchy-t2/config" 'TTS_ENABLED=true'
 assert_file_contains "$home/.config/hypr/omarchy-t2.lua" 'hl.unbind("ALT + R")'
 assert_file_contains "$home/.config/hypr/omarchy-t2.lua" 'o.bind("ALT + E", "Pause or resume selected text", "omarchy-tts toggle-pause")'
-"$cli" tts status | grep -q '^enabled=true models=ready engine=ready$'
+"$cli" tts status | grep -q '^bindings=unavailable models=ready engine=ready$'
 "$cli" tts disable
 assert_file_contains "$home/.config/omarchy-t2/config" 'TTS_ENABLED=false'
 assert_file_contains "$home/.config/hypr/omarchy-t2.lua" 'if false then'
@@ -240,7 +280,7 @@ fi
 "$cli" power gpu-saving off
 "$cli" power wifi-saving off
 "$cli" power usb-autosuspend off
-"$cli" power status | grep -q '^enabled=true$'
+"$cli" power status | grep -q '^configured.enabled=true$'
 "$cli" power disable
 assert_file_contains "$root/etc/omarchy-t2.conf" 'POWER_ENABLED=false'
 "$cli" power enable
@@ -275,6 +315,9 @@ printf 'canonical Radeon policy\n' >"$root/etc/udev/rules.d/30-omarchy-t2-amdgpu
 install -d "$home/.config/uwsm/env-hyprland.d"
 printf 'canonical renderer policy\n' >"$home/.config/uwsm/env-hyprland.d/20-omarchy-t2-gpu"
 "$cli" restore --yes
+for profile in "${default_tuning_paths[@]}"; do
+  assert_file_contains "$home/.config/$profile" "previous default: $profile"
+done
 assert_file_contains "$root/etc/t2fand.conf" 'old fan config'
 assert_not_exists "$root/etc/systemd/system/power-optimizer.service"
 assert_file_contains "$root/etc/modprobe.d/apple-gmux.conf" 'force_igd=y'
@@ -289,6 +332,18 @@ assert_not_exists "$home/.local/share/omarchy-t2/tts"
 if grep -q '^-- omarchy-t2:start$' "$home/.config/hypr/hyprland.lua"; then
   fail "Hyprland include survived restore"
 fi
+
+assert_file_contains "$root/etc/pipewire/pipewire.conf.d/old-microphone.conf" 'filter-chain-t2-mic'
+assert_file_contains "$home/.config/pipewire/filter-chain.conf.d/10-t2_161_speakers.conf" 'previous user speaker profile'
+assert_link_target "$home/.config/pipewire/pipewire.conf.d/10-t2-mic.conf" /missing/previous-mic.conf
+assert_file_contains "$home/.config/systemd/user/bt-agent.service.d/upstream-fix.conf" '/old-agent'
+"$cli" setup --yes --bluetooth
+assert_exists "$home/.config/systemd/user/bt-agent.service.d/omarchy-t2.conf"
+assert_not_exists "$home/.config/systemd/user/bt-agent.service.d/upstream-fix.conf"
+"$cli" bluetooth disable
+assert_not_exists "$home/.config/systemd/user/bt-agent.service.d/omarchy-t2.conf"
+assert_file_contains "$home/.config/systemd/user/bt-agent.service.d/upstream-fix.conf" '/old-agent'
+"$cli" restore --yes
 
 printf 'MacBookPro18,3\n' >"$root/sys/devices/virtual/dmi/id/product_name"
 if "$cli" battery limit 90 >/dev/null 2>&1; then

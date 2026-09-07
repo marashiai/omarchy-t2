@@ -2,8 +2,8 @@
 
 pkgname=omarchy-t2
 pkgver=0.4.0
-pkgrel=1
-pkgdesc="Omarchy hardware support, React DRM Touch Bar setup, tuning, and Vulkan TTS for Intel T2 MacBook Pros"
+pkgrel=5
+pkgdesc="Omarchy hardware support, React DRM Touch Bar setup, tuning, and optional Vulkan TTS for Intel T2 MacBook Pros"
 arch=('x86_64')
 url="https://github.com/marashiai/omarchy-t2"
 license=('MIT')
@@ -15,7 +15,6 @@ depends=(
   'calf'
   'coreutils'
   'curl'
-  'ffmpeg'
   'findutils'
   'gawk'
   'glib2'
@@ -39,20 +38,17 @@ depends=(
   'systemd'
   't2fanrd'
   'util-linux'
-  'vulkan-icd-loader'
-  'vulkan-radeon'
   'wireplumber'
-  'wl-clipboard'
 )
-makedepends=(
-  'cmake'
-  'ninja'
-  'patch'
-  'shaderc'
-  'spirv-headers'
-  'vulkan-headers'
+# Set WITH_QWEN_TTS=1 to compile and bundle the optional Vulkan engine.
+_with_qwen_tts=${WITH_QWEN_TTS:-0}
+makedepends=('patch')
+optdepends=(
+  'ffmpeg: optional text-to-speech playback'
+  'libnotify: optional text-to-speech notifications'
+  'vulkan-radeon: optional text-to-speech on Radeon'
+  'wl-clipboard: optional text-to-speech selection reading'
 )
-options=('!lto')
 backup=('etc/omarchy-t2.conf')
 install=omarchy-t2.install
 
@@ -62,24 +58,39 @@ _ggml_commit=c044c6f03892f9d5e98213b05f8afea1f8b0d3c9
 _dsp_commit=8d3edcbfcf17649279927fb12130b8575e912d2e
 source=(
   "$pkgname::git+$url.git#commit=$_source_commit"
-  "qwentts::git+https://github.com/ServeurpersoCom/qwentts.cpp.git#commit=$_qwentts_commit"
-  "ggml::git+https://github.com/ServeurpersoCom/ggml.git#commit=$_ggml_commit"
+  "optional-qwen.patch"
   "t2-apple-audio-dsp-$_dsp_commit.tar.gz::https://github.com/lemmyg/t2-apple-audio-dsp/archive/$_dsp_commit.tar.gz"
 )
 sha256sums=(
   'SKIP'
-  'SKIP'
-  'SKIP'
+  '7702a0e9d1932855fef8e9762f540503ff1f9bfebed82e4bdc0a5fa07d8ac023'
   '24370f3c1a9bbebb18568a9247f992b6c630356e6b62178568aed25d9efd792c'
 )
 
+if [[ $_with_qwen_tts == 1 ]]; then
+  depends+=('ffmpeg' 'vulkan-icd-loader' 'vulkan-radeon' 'wl-clipboard')
+  makedepends+=('cmake' 'ninja' 'shaderc' 'spirv-headers' 'vulkan-headers')
+  options+=('!lto')
+  source+=(
+    "qwentts::git+https://github.com/ServeurpersoCom/qwentts.cpp.git#commit=$_qwentts_commit"
+    "ggml::git+https://github.com/ServeurpersoCom/ggml.git#commit=$_ggml_commit"
+  )
+  sha256sums+=('SKIP' 'SKIP')
+elif [[ $_with_qwen_tts != 0 ]]; then
+  error "WITH_QWEN_TTS must be 0 or 1"
+  exit 1
+fi
+
 prepare() {
+  patch -d "$pkgname" -Np1 -i "$srcdir/optional-qwen.patch"
+  [[ $_with_qwen_tts == 1 ]] || return 0
   git -C qwentts submodule init
   git -C qwentts config submodule.ggml.url "$srcdir/ggml"
   git -C qwentts -c protocol.file.allow=always submodule update
 }
 
 build() {
+  [[ $_with_qwen_tts == 1 ]] || return 0
   cmake \
     -S qwentts \
     -B qwentts-build \
@@ -97,6 +108,7 @@ build() {
 package() {
   make -C "$pkgname" \
     DESTDIR="$pkgdir" \
+    WITH_QWEN_TTS="$_with_qwen_tts" \
     DSP_SOURCE="$srcdir/t2-apple-audio-dsp-$_dsp_commit" \
     QWEN_TTS_BINARY="$srcdir/qwentts-build/qwen-tts" \
     QWEN_TTS_LICENSE="$srcdir/qwentts/LICENSE" \

@@ -2,6 +2,7 @@ PREFIX ?= /usr
 SYSCONFDIR ?= /etc
 DESTDIR ?=
 DSP_SOURCE ?=
+WITH_QWEN_TTS ?= 0
 QWEN_TTS_BINARY ?=
 QWEN_TTS_LICENSE ?=
 GGML_LICENSE ?=
@@ -9,21 +10,31 @@ GGML_LICENSE ?=
 PACKAGE_SHARE := $(DESTDIR)$(PREFIX)/share/omarchy-t2
 PACKAGE_LIB := $(DESTDIR)$(PREFIX)/lib/omarchy-t2
 
+ifneq ($(WITH_QWEN_TTS),0)
+ifneq ($(WITH_QWEN_TTS),1)
+$(error WITH_QWEN_TTS must be 0 or 1)
+endif
+endif
+
 .PHONY: install test
 
 install:
 	@test -n "$(DSP_SOURCE)" || { echo "DSP_SOURCE must point to t2-apple-audio-dsp speakers_161" >&2; exit 1; }
 	@test -f "$(DSP_SOURCE)/config/10-t2_161_speakers.conf"
+ifeq ($(WITH_QWEN_TTS),1)
 	@test -x "$(QWEN_TTS_BINARY)" || { echo "QWEN_TTS_BINARY must point to a Vulkan qwen-tts executable" >&2; exit 1; }
 	@test -f "$(QWEN_TTS_LICENSE)" || { echo "QWEN_TTS_LICENSE must point to qwentts.cpp's license" >&2; exit 1; }
 	@test -f "$(GGML_LICENSE)" || { echo "GGML_LICENSE must point to ggml's license" >&2; exit 1; }
+endif
 	install -Dm755 bin/omarchy-t2 "$(DESTDIR)$(PREFIX)/bin/omarchy-t2"
 	install -Dm755 libexec/omarchy-tts "$(DESTDIR)$(PREFIX)/bin/omarchy-tts"
 	install -Dm755 libexec/omarchy-tts-queue.py "$(PACKAGE_LIB)/tts-queue"
 	install -Dm755 libexec/omarchy-t2-power-optimizer "$(PACKAGE_LIB)/power-optimizer"
 	install -Dm755 libexec/omarchy-t2-fan-control "$(PACKAGE_LIB)/fan-control"
 	install -Dm755 libexec/omarchy-t2-audio-output-sink "$(PACKAGE_LIB)/audio-output-sink"
+ifeq ($(WITH_QWEN_TTS),1)
 	install -Dm755 "$(QWEN_TTS_BINARY)" "$(PACKAGE_LIB)/qwen-tts"
+endif
 	install -Dm755 libexec/omarchy-t2-apply-battery-limit "$(PACKAGE_LIB)/apply-battery-limit"
 	install -Dm755 libexec/omarchy-t2-bluetooth-agent "$(PACKAGE_LIB)/bluetooth-agent"
 	install -Dm755 libexec/omarchy-t2-mic-guard "$(PACKAGE_LIB)/mic-guard"
@@ -52,11 +63,14 @@ install:
 	install -m644 "$(DSP_SOURCE)"/firs/macbook_pro_t2_16_1_*_4-96k.wav "$(DESTDIR)$(PREFIX)/share/pipewire/devices/apple/"
 	install -Dm644 LICENSE "$(DESTDIR)$(PREFIX)/share/licenses/omarchy-t2/LICENSE"
 	install -Dm644 "$(DSP_SOURCE)/LICENSE" "$(DESTDIR)$(PREFIX)/share/licenses/omarchy-t2/t2-apple-audio-dsp-LICENSE"
+ifeq ($(WITH_QWEN_TTS),1)
 	install -Dm644 "$(QWEN_TTS_LICENSE)" "$(DESTDIR)$(PREFIX)/share/licenses/omarchy-t2/qwentts.cpp-LICENSE"
 	install -Dm644 "$(GGML_LICENSE)" "$(DESTDIR)$(PREFIX)/share/licenses/omarchy-t2/ggml-LICENSE"
+endif
 	install -Dm644 README.md "$(DESTDIR)$(PREFIX)/share/doc/omarchy-t2/README.md"
 
 test:
+	bash tests/test-status.sh
 	python3 tests/test-tts-queue.py
 	bash tests/test-audio-output-sink.sh
 	bash tests/test-power-optimizer.sh

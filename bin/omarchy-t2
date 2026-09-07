@@ -34,7 +34,7 @@ usage() {
 Omarchy support and tuning for Intel T2 MacBook Pros.
 
 Usage:
-  omarchy-t2 setup [--defaults] [--yes] [--dry-run]
+  omarchy-t2 setup [--defaults] [--bluetooth] [--yes] [--dry-run]
   omarchy-t2 status
   omarchy-t2 doctor
   omarchy-t2 battery [status | limit <50-100>]
@@ -422,22 +422,22 @@ power_thermal() {
 }
 
 power_status() {
-  local live_profile=unavailable live_source=unknown live_state=unknown service=inactive
+  local live_profile=unavailable live_source=unknown live_state=unknown service
+  service=$(service_actual_state power-optimizer.service)
   load_system_config
   if runtime; then
-    systemctl is-active --quiet power-optimizer.service && service=active
     live_profile=$(powerprofilesctl get 2>/dev/null || echo unavailable)
     [[ -r /run/power-optimizer/power_source ]] && live_source=$(< /run/power-optimizer/power_source)
     [[ -r /run/power-optimizer/thermal_state ]] && live_state=$(< /run/power-optimizer/thermal_state)
   fi
   cat <<EOF
-enabled=$POWER_ENABLED
 service=$service
-profiles=$POWER_AC_PROFILE/$POWER_BATTERY_PROFILE automatic=$POWER_PROFILE_SWITCHING
-gpu-saving=$POWER_GPU_SAVING profile=$POWER_GPU_PROFILE
-wifi-saving=$POWER_WIFI_SAVING
-usb-autosuspend=$POWER_USB_AUTOSUSPEND
-thermal-idle=$POWER_THERMAL_IDLE range=${POWER_WARM_C}-${POWER_HOT_C}C idle=${POWER_WARM_IDLE_PERCENT}-${POWER_HOT_IDLE_PERCENT}% recovery=${POWER_WARM_RECOVERY_C}/${POWER_HOT_RECOVERY_C}C
+configured.enabled=$POWER_ENABLED
+configured.profiles=$POWER_AC_PROFILE/$POWER_BATTERY_PROFILE automatic=$POWER_PROFILE_SWITCHING
+configured.gpu-saving=$POWER_GPU_SAVING profile=$POWER_GPU_PROFILE
+configured.wifi-saving=$POWER_WIFI_SAVING
+configured.usb-autosuspend=$POWER_USB_AUTOSUSPEND
+configured.thermal-idle=$POWER_THERMAL_IDLE range=${POWER_WARM_C}-${POWER_HOT_C}C idle=${POWER_WARM_IDLE_PERCENT}-${POWER_HOT_IDLE_PERCENT}% recovery=${POWER_WARM_RECOVERY_C}/${POWER_HOT_RECOVERY_C}C
 live=source:$live_source profile:$live_profile thermal:$live_state
 EOF
 }
@@ -532,7 +532,7 @@ tts_models_ready() {
 
 tts_require_runtime() {
   local command
-  [[ -x $TTS_ENGINE ]] || die "packaged TTS engine is missing: $TTS_ENGINE"
+  [[ -x $TTS_ENGINE ]] || die "optional Qwen TTS engine is not installed: $TTS_ENGINE; install with WITH_QWEN_TTS=1 or set OMARCHY_T2_TTS_ENGINE to an existing Vulkan qwen-tts executable"
   for command in curl ffmpeg flock notify-send pw-play sha256sum wl-paste; do
     command -v "$command" >/dev/null 2>&1 || die "TTS dependency is missing: $command"
   done
@@ -746,21 +746,57 @@ touchbar_uninstall() {
   (cd "$TOUCHBAR_DIR" && ./uninstall.sh)
 }
 
+# Compatibility: restore backups made by earlier profile-cleanup versions.
+audio_restore_previous() {
+  local kind=$1 scope manifest profile
+  for scope in system user; do
+    manifest="$USER_STATE/audio-$kind-$scope.removed"
+    [[ -f $manifest ]] || continue
+    while IFS= read -r profile; do
+      [[ -n $profile ]] || continue
+      if [[ $scope == system ]]; then
+        restore_system_file "$profile"
+      else
+        restore_user_file "$profile"
+      fi
+    done <"$manifest"
+    rm -f -- "$manifest"
+  done
+}
+
+audio_restore_default_tuning() {
+  local manifest="$USER_STATE/audio-default-tuning.removed"
+  local state="$USER_STATE/audio-default-tuning.service-state"
+  local profile enabled active
+  [[ -f $state ]] || return 0
+  if [[ -f $manifest ]]; then
+    while IFS= read -r profile; do
+      [[ -n $profile ]] && restore_user_file "$profile"
+    done <"$manifest"
+  fi
+  user_systemctl daemon-reload
+  read -r enabled active <"$state"
+  if [[ $enabled == enabled ]]; then user_systemctl enable omarchy-speaker-tuning.service; fi
+  if [[ $active == active ]]; then user_systemctl start omarchy-speaker-tuning.service; fi
+  rm -f -- "$manifest" "$state"
+}
+
 audio_speakers_enable() {
   local local_bin="${XDG_BIN_HOME:-$HOME/.local/bin}"
-  local legacy="$ROOT/etc/pipewire/pipewire.conf.d/10-t2_161_speakers.conf"
   local target="$ROOT/etc/pipewire/pipewire.conf.d/10-omarchy-t2-speakers.conf"
-  if [[ -e $legacy || -L $legacy ]]; then
-    backup_system_file "$legacy"
-    run_root rm -f "$legacy"
-  fi
   replace_system_link "$SHARE_DIR/audio/10-omarchy-t2-speakers.conf" "$target"
   replace_user_link "$LIB_DIR/audio-output-sink" "$local_bin/omarchy-audio-output-sink"
 }
 
 audio_speakers_disable() {
   restore_system_file "$ROOT/etc/pipewire/pipewire.conf.d/10-omarchy-t2-speakers.conf"
-  restore_system_file "$ROOT/etc/pipewire/pipewire.conf.d/10-t2_161_speakers.conf"
+  audio_restore_previous speakers
+  audio_restore_default_tuning
+  # Also support backups created before migration manifests existed.
+  local legacy="$ROOT/etc/pipewire/pipewire.conf.d/10-t2_161_speakers.conf"
+  if [[ -e $(system_backup_path "$legacy") || -L $(system_backup_path "$legacy") ]]; then
+    restore_system_file "$legacy"
+  fi
   restore_user_file "${XDG_BIN_HOME:-$HOME/.local/bin}/omarchy-audio-output-sink"
 }
 
@@ -782,6 +818,7 @@ audio_mic_disable() {
   local config_home=${XDG_CONFIG_HOME:-$HOME/.config}
   user_systemctl disable --now omarchy-t2-mic-guard.service >/dev/null 2>&1 || true
   restore_user_file "$config_home/pipewire/pipewire.conf.d/10-omarchy-t2-mic.conf"
+  audio_restore_previous mic
   restore_user_file "$config_home/systemd/user/omarchy-mic-guard.service"
   user_systemctl daemon-reload
 }
@@ -816,6 +853,8 @@ bluetooth_enable() {
   local agent="$LIB_DIR/bluetooth-agent"
   local temporary
 
+  install -d -m0755 "$USER_STATE"
+  touch "$USER_STATE/bluetooth-managed"
   replace_user_link "$SHARE_DIR/wireplumber/bluetooth-a2dp-autoconnect.conf" "$config_home/wireplumber/wireplumber.conf.d/omarchy-t2-a2dp-autoconnect.conf"
   if [[ -e $legacy || -L $legacy ]]; then
     backup_user_file "$legacy"
@@ -843,11 +882,17 @@ EOF
 
 bluetooth_disable() {
   local config_home=${XDG_CONFIG_HOME:-$HOME/.config}
+  local dropin="$config_home/systemd/user/bt-agent.service.d/omarchy-t2.conf"
+  # Default setup must leave Bluetooth alone, including during restore.
+  if [[ ! -e $USER_STATE/bluetooth-managed ]] && ! grep -Fq '# Managed by omarchy-t2.' "$dropin" 2>/dev/null; then
+    return 0
+  fi
   restore_user_file "$config_home/systemd/user/bt-agent.service.d/omarchy-t2.conf"
   restore_user_file "$config_home/systemd/user/bt-agent.service.d/upstream-fix.conf"
   restore_user_file "$config_home/wireplumber/wireplumber.conf.d/omarchy-t2-a2dp-autoconnect.conf"
   user_systemctl daemon-reload
   user_systemctl restart bt-agent.service
+  rm -f "$USER_STATE/bluetooth-managed"
 }
 
 reset_to_package_defaults() {
@@ -858,11 +903,13 @@ reset_to_package_defaults() {
 cmd_setup() {
   local assume_yes=false
   local defaults=false
+  local with_bluetooth=false
 
   while (($#)); do
     case $1 in
     --yes|-y) assume_yes=true ;;
     --defaults) defaults=true ;;
+    --bluetooth) with_bluetooth=true ;;
     --dry-run) DRY_RUN=true ;;
     *) die "unknown setup option: $1" ;;
     esac
@@ -877,7 +924,7 @@ Omarchy T2 will configure $SUPPORTED_MODEL with:
   • adaptive AC/battery, Radeon, Wi-Fi, USB, and thermal power policy
   • Mac ISO keyboard layout with tap-to-click disabled
   • protected six-speaker DSP and normalized microphone DSP
-  • Bluetooth passkey display and A2DP auto-connect
+  • Bluetooth changes: $([[ $with_bluetooth == true ]] && echo enabled || echo skipped)
 
 Existing files are backed up under:
   $SYSTEM_STATE
@@ -907,7 +954,9 @@ EOF
   input_apply
   audio_speakers_enable
   audio_mic_enable
-  bluetooth_enable
+  if [[ $with_bluetooth == true ]]; then
+    bluetooth_enable
+  fi
   restart_audio
   audio_defaults
 
@@ -917,24 +966,108 @@ EOF
   fi
 }
 
+battery_actual_limit() {
+  local path value
+  path=$(find "$ROOT/sys/devices" -path '*/APP0001:00/battery_charge_limit' -print -quit 2>/dev/null || true)
+  if [[ -r $path ]]; then
+    value=$(<"$path")
+    [[ $value =~ ^[0-9]+$ ]] && { echo "$value"; return; }
+  fi
+  echo unavailable
+}
+
+service_actual_state() {
+  local state
+  if runtime && state=$(systemctl show "$1" --property=ActiveState --value 2>/dev/null); then
+    case $state in
+      active|inactive|failed|activating|deactivating|reloading) echo "$state"; return ;;
+    esac
+  fi
+  echo unavailable
+}
+
+fan_installed_profile() {
+  local profile
+  [[ -r $ROOT/etc/t2fand.conf ]] || { echo unavailable; return; }
+  for profile in cool balanced quiet; do
+    if cmp -s "$ROOT/etc/t2fand.conf" "$SHARE_DIR/fan/t2fand-$profile.conf"; then
+      echo "$profile"
+      return
+    fi
+  done
+  echo custom
+}
+
+hypr_actual_option() {
+  local json
+  if runtime && json=$(hyprctl -j getoption "$1" 2>/dev/null); then
+    if printf '%s' "$json" | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    value = data["str"] if "str" in data else data["bool"]
+    print(str(value).lower() if isinstance(value, bool) else value)
+except (ValueError, KeyError, TypeError):
+    sys.exit(1)
+' 2>/dev/null; then return; fi
+  fi
+  echo unavailable
+}
+
+input_actual_state() {
+  KEYBOARD_LAYOUT=$(hypr_actual_option input:kb_layout)
+  KEYBOARD_VARIANT=$(hypr_actual_option input:kb_variant)
+  TAP_TO_CLICK=$(hypr_actual_option input:touchpad:tap-to-click)
+  [[ $KEYBOARD_VARIANT == unavailable ]] && KEYBOARD_VARIANT=
+  return 0
+}
+
+tts_actual_state() {
+  local bindings
+  if runtime && bindings=$(hyprctl -j binds 2>/dev/null); then
+    if printf '%s' "$bindings" | python3 -c '
+import json, sys
+try:
+    bindings = json.load(sys.stdin)
+    if not isinstance(bindings, list):
+        sys.exit(1)
+    print("enabled" if any(b.get("arg") == "omarchy-tts read" for b in bindings) else "disabled")
+except (ValueError, AttributeError, TypeError):
+    sys.exit(1)
+' 2>/dev/null; then return; fi
+  fi
+  echo unavailable
+}
+
+audio_actual_state() {
+  local nodes
+  if runtime && nodes=$(pactl list short "$1" 2>/dev/null); then
+    if awk -v node="$2" '$2 == node { found=1 } END { exit !found }' <<<"$nodes"; then
+      echo active
+    else
+      echo inactive
+    fi
+  else
+    echo unavailable
+  fi
+}
+
 cmd_status() {
-  local actual_battery=unavailable
-  local battery_path
-  load_system_config
-  load_input_config
-  battery_path=$(find "$ROOT/sys/devices" -path '*/APP0001:00/battery_charge_limit' -print -quit 2>/dev/null || true)
-  [[ -r $battery_path ]] && actual_battery=$(<"$battery_path")
+  local actual_battery
+  actual_battery=$(battery_actual_limit)
+  [[ $actual_battery == unavailable ]] || actual_battery+='%'
+  input_actual_state
   cat <<EOF
 Model:          $(model_name)
-Battery limit:  $BATTERY_LIMIT% (hardware: $actual_battery)
-Fan profile:    $FAN_PROFILE
-Power policy:   $([[ $POWER_ENABLED == true ]] && echo enabled || echo disabled)
+Battery limit:  $actual_battery
+Fan profile:    $(fan_installed_profile) (installed config; service: $(service_actual_state t2fanrd.service))
+Power policy:   $(service_actual_state power-optimizer.service)
 Keyboard:       $KEYBOARD_LAYOUT${KEYBOARD_VARIANT:+/$KEYBOARD_VARIANT}
 Tap-to-click:   $TAP_TO_CLICK
-Text-to-speech: $([[ $TTS_ENABLED == true ]] && echo enabled || echo disabled) (models: $(tts_models_ready && echo ready || echo missing))
+Text-to-speech: $(tts_actual_state) (bindings; models: $(tts_models_ready && echo ready || echo missing); engine: $([[ -x $TTS_ENGINE ]] && echo ready || echo missing))
 Touch Bar UI:   $(touchbar_service_state) (source: $(touchbar_source_state))
-Speaker DSP:    $([[ -e $ROOT/etc/pipewire/pipewire.conf.d/10-omarchy-t2-speakers.conf ]] && echo enabled || echo disabled)
-Microphone DSP: $([[ -e ${XDG_CONFIG_HOME:-$HOME/.config}/pipewire/pipewire.conf.d/10-omarchy-t2-mic.conf ]] && echo enabled || echo disabled)
+Speaker DSP:    $(audio_actual_state sinks effect_input.filter-chain-speakers)
+Microphone DSP: $(audio_actual_state sources effect_output.filter-chain-t2-mic)
 EOF
 }
 
@@ -1033,7 +1166,7 @@ cmd_restore() {
 cmd_battery() {
   require_supported_model
   case ${1:-status} in
-  status) load_system_config; echo "$BATTERY_LIMIT" ;;
+  status) battery_actual_limit ;;
   limit) [[ $# == 2 ]] || die "usage: omarchy-t2 battery limit <50-100>"; battery_limit "$2" ;;
   *) die "usage: omarchy-t2 battery [status | limit <50-100>]" ;;
   esac
@@ -1043,8 +1176,7 @@ cmd_fan() {
   require_supported_model
   case ${1:-status} in
   status)
-    load_system_config
-    echo "profile=$FAN_PROFILE"
+    echo "profile=$(fan_installed_profile) (installed config)"
     if runtime; then "$LIB_DIR/fan-control" status; fi
     ;;
   profile) [[ $# == 2 ]] || die "usage: omarchy-t2 fan profile <cool|balanced|quiet>"; fan_profile "$2" ;;
@@ -1075,7 +1207,7 @@ cmd_power() {
 cmd_input() {
   require_supported_model
   case ${1:-status} in
-  status) load_input_config; printf 'keyboard=%s/%s tap=%s\n' "$KEYBOARD_LAYOUT" "$KEYBOARD_VARIANT" "$TAP_TO_CLICK" ;;
+  status) input_actual_state; printf 'keyboard=%s/%s tap=%s\n' "$KEYBOARD_LAYOUT" "$KEYBOARD_VARIANT" "$TAP_TO_CLICK" ;;
   keyboard) (($# >= 2 && $# <= 3)) || die "usage: omarchy-t2 input keyboard <layout> [variant]"; input_keyboard "$2" "${3:-}" ;;
   tap) [[ $# == 2 ]] || die "usage: omarchy-t2 input tap <on|off>"; input_tap "$2" ;;
   *) die "usage: omarchy-t2 input [status | keyboard <layout> [variant] | tap <on|off>]" ;;
@@ -1162,9 +1294,8 @@ cmd_tts() {
   require_supported_model
   case ${1:-status} in
   status)
-    load_input_config
-    printf 'enabled=%s models=%s engine=%s\n' \
-      "$TTS_ENABLED" \
+    printf 'bindings=%s models=%s engine=%s\n' \
+      "$(tts_actual_state)" \
       "$(tts_models_ready && echo ready || echo missing)" \
       "$([[ -x $TTS_ENGINE ]] && echo ready || echo missing)"
     ;;

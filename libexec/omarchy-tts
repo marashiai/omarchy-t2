@@ -110,7 +110,11 @@ finish_job() {
 }
 
 require_tts() {
-  if [[ ! -x $synthesizer || ! -f $model || ! -f $codec ]]; then
+  if [[ ! -x $synthesizer ]]; then
+    notify-send -u critical "Read selected text" "Optional Qwen TTS engine is not installed; see omarchy-t2 documentation"
+    exit 1
+  fi
+  if [[ ! -f $model || ! -f $codec ]]; then
     notify-send -u critical "Read selected text" "Run 'omarchy-t2 tts setup' first"
     exit 1
   fi

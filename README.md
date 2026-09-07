@@ -33,7 +33,7 @@ omarchy-t2 setup --dry-run
   and temperature-aware CPU idle time
 - Protected six-channel speaker DSP for `MacBookPro16,1`
 - Normalized, limited mono microphone DSP using the working array channel
-- Bluetooth passkey display and A2DP auto-connect
+- Optional Bluetooth passkey display and A2DP auto-connect
 - Compatibility helper for Omarchy's T2 GPU toggle
 - Optional React DRM Touch Bar control center from the AminMarashi fork
 - Optional Qwen3-TTS reading on the Radeon through Vulkan
@@ -62,11 +62,19 @@ omarchy-t2 input keyboard us mac-iso
 omarchy-t2 input tap on
 omarchy-t2 audio speakers off
 omarchy-t2 audio mic on
-omarchy-t2 bluetooth disable
+omarchy-t2 bluetooth enable
 omarchy toggle hybrid gpu
 omarchy-t2 touchbar setup
 omarchy-t2 tts setup
 ```
+
+Bluetooth changes are opt-in: use `omarchy-t2 bluetooth enable` separately,
+or `omarchy-t2 setup --bluetooth` to include them during setup. Ordinary setup
+and restore leave unmanaged Bluetooth configuration alone.
+
+Enabling audio DSP preserves existing audio profiles and Omarchy speaker tuning.
+Files replaced at omarchy-t2's own managed paths are still backed up. Restore
+also supports profile backups created by earlier versions of this command.
 
 ## Touch Bar
 
@@ -136,8 +144,15 @@ including its confirmation and reboot flow.
 
 ## GPU text-to-speech
 
-Run the optional setup once to download and verify the Q4 models (about 1.4
-GB):
+Qwen TTS is excluded from the default installation, so installing the command
+does not compile anything. To bundle the Vulkan engine, build the AUR package
+with `WITH_QWEN_TTS=1 makepkg -si` (this explicitly enables compilation).
+Alternatively, set `OMARCHY_T2_TTS_ENGINE` to an existing Vulkan `qwen-tts`
+executable and install the optional playback dependencies listed by the package.
+Keep that environment variable set when running setup and playback.
+
+Once the engine is installed, run setup to download and verify the Q4 models
+(about 1.4 GB):
 
 ```bash
 omarchy-t2 tts setup
@@ -158,6 +173,12 @@ The setup unbinds those keys before installing its bindings, stores models in
 `~/.local/share/omarchy-t2/tts`, and leaves the model files out of the package.
 Disable the bindings without deleting models with `omarchy-t2 tts disable`.
 Remove the downloaded models with `omarchy-t2 tts remove`.
+
+`omarchy-t2 status` reads the hardware battery limit, live service state,
+Hyprland input options and TTS bindings, and available audio DSP nodes. Fan
+profiles are identified from the installed fan configuration and labeled as
+such. Unreachable services report `unavailable` instead of saved defaults.
+`omarchy-t2 power status` labels saved policy settings as `configured.*`.
 
 Inspect the machine with `omarchy-t2 status` and `omarchy-t2 doctor`. Restore
 the files that were present before setup with:
@@ -215,11 +236,14 @@ To stage a complete package tree, pass a checkout of the speaker DSP branch:
 ```bash
 make DESTDIR=/tmp/omarchy-t2-stage \
   DSP_SOURCE=/path/to/t2-apple-audio-dsp \
-  QWEN_TTS_BINARY=/path/to/qwen-tts \
-  QWEN_TTS_LICENSE=/path/to/qwentts.cpp/LICENSE \
-  GGML_LICENSE=/path/to/qwentts.cpp/ggml/LICENSE \
   install
 ```
+
+This copies scripts and audio assets without compiling. To include an existing
+Qwen engine, additionally pass `WITH_QWEN_TTS=1`,
+`QWEN_TTS_BINARY=/path/to/qwen-tts`,
+`QWEN_TTS_LICENSE=/path/to/qwentts.cpp/LICENSE`, and
+`GGML_LICENSE=/path/to/qwentts.cpp/ggml/LICENSE`.
 
 ## Author
 
