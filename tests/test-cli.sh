@@ -217,7 +217,7 @@ assert_link_target \
   "$root/usr/lib/omarchy-t2/audio-output-sink"
 assert_file_contains "$root/usr/lib/omarchy-t2/audio-output-sink" 'node\.link-group'
 assert_file_contains "$cli" 'pactl set-sink-volume effect_input.filter-chain-speakers 100%'
-assert_file_contains "$cli" 'pactl set-sink-volume alsa_output.pci-0000_04_00.3.HiFi__Speaker__sink 25%'
+assert_file_contains "$cli" 'pactl set-sink-volume alsa_output.pci-0000_04_00.3.HiFi__Speaker__sink 100%'
 assert_file_contains "$home/.config/hypr/hyprland.lua" '-- omarchy-t2:start'
 assert_file_contains "$home/.config/hypr/omarchy-t2.lua" 'kb_variant = "mac-iso"'
 assert_file_contains "$home/.config/hypr/omarchy-t2.lua" 'tap_to_click = false'

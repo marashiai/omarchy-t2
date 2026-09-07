@@ -40,7 +40,7 @@ omarchy-t2 setup --dry-run
 
 The DSP input stays at 100%; a packaged PipeWire link-group resolver
 makes Omarchy's panel and media keys adjust the physical Apple speaker sink,
-which starts at 25%. Raise that physical output cautiously.
+which starts at 100%.
 Microphone selection remains automatic: external microphones take precedence
 when connected, with the processed internal microphone as the fallback.
 Enabling microphone DSP clears the source preference saved by version 0.1.0;
