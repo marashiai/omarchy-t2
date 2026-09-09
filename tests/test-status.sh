@@ -24,10 +24,19 @@ query_failure=false
 live_service=inactive
 live_tts=false
 live_audio=false
+systemctl_calls=
 systemctl() {
-  [[ $query_failure == false && $1 == show ]] || return 1
-  echo "$live_service"
+  case $1 in
+    show)
+      [[ $query_failure == false ]] || return 1
+      echo "$live_service"
+      ;;
+    is-active) [[ $live_service == active ]] ;;
+    daemon-reload|restart) systemctl_calls+="$1 ${*:2}"$'\n' ;;
+    *) return 1 ;;
+  esac
 }
+sudo() { "$@"; }
 hyprctl() {
   [[ $query_failure == false ]] || return 1
   case "$2 ${3:-}" in
@@ -74,5 +83,16 @@ assert_line 'Speaker DSP:    unavailable'
 # Missing hardware must not fall back to the stale saved limit.
 rm "$OMARCHY_T2_ROOT/sys/devices/platform/APP0001:00/battery_charge_limit"
 [[ $(battery_actual_limit) == unavailable ]]
-echo 'All live status tests passed'
 
+live_service=inactive
+warning_file="$test_dir/power-warning"
+power_restart 2>"$warning_file"
+grep -Fq "run 'omarchy-t2 power enable' to apply them" "$warning_file"
+[[ $systemctl_calls != *restart* ]]
+
+live_service=active
+systemctl_calls=
+power_restart 2>"$warning_file"
+[[ ! -s $warning_file ]]
+grep -Fxq 'restart power-optimizer.service' <<<"$systemctl_calls"
+echo 'All live status tests passed'

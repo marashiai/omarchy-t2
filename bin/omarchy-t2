@@ -329,7 +329,11 @@ fan_profile() {
 power_restart() {
   if runtime; then
     sudo systemctl daemon-reload
-    sudo systemctl try-restart power-optimizer.service
+    if systemctl is-active --quiet power-optimizer.service; then
+      sudo systemctl restart power-optimizer.service
+    else
+      echo "omarchy-t2: power settings saved, but the power optimizer is inactive; run 'omarchy-t2 power enable' to apply them" >&2
+    fi
   fi
 }
 
