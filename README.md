@@ -61,6 +61,7 @@ omarchy-t2 fan max
 omarchy-t2 fan normal
 omarchy-t2 power status
 omarchy-t2 power thermal on 45 65 15 50
+omarchy-t2 performance on
 omarchy-t2 power gpu-saving off
 omarchy-t2 input keyboard us mac-iso
 omarchy-t2 input tap on
@@ -79,6 +80,11 @@ and restore leave unmanaged Bluetooth configuration alone.
 Enabling audio DSP preserves existing audio profiles and Omarchy speaker tuning.
 Files replaced at omarchy-t2's own managed paths are still backed up. Restore
 also supports profile backups created by earlier versions of this command.
+
+For a lighter compositor profile, `omarchy-t2 performance on` adds a managed
+Hyprland override that disables window transparency and animations. Use
+`omarchy-t2 performance off` to remove it; the command backs up the existing
+`looknfeel.lua` before changing it.
 
 ## Touch Bar
 

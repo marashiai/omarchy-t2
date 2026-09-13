@@ -44,6 +44,7 @@ Usage:
   omarchy-t2 power thermal off
   omarchy-t2 power thermal on <warm-c> <hot-c> <warm-idle> <hot-idle>
   omarchy-t2 power <profile-switching|gpu-saving|wifi-saving|usb-autosuspend> <on|off>
+  omarchy-t2 performance [status | on | off]
   omarchy-t2 input [status | keyboard <layout> [variant] | tap <on|off>]
   omarchy-t2 audio [status | enable | disable | speakers <on|off> | mic <on|off>]
   omarchy-t2 bluetooth [status | enable | disable]
@@ -1253,6 +1254,69 @@ remove_input_include() {
   rm -f "$temporary"
 }
 
+performance_config() {
+  printf '%s/hypr/looknfeel.lua' "${XDG_CONFIG_HOME:-$HOME/.config}"
+}
+
+performance_block() {
+  cat <<'EOF'
+
+-- omarchy-t2:performance:start
+-- Disable transparency and compositor animations for a lighter desktop.
+o.window(".*", { opacity = "1 1" })
+hl.config({
+  animations = {
+    enabled = false,
+  },
+})
+-- omarchy-t2:performance:end
+EOF
+}
+
+performance_remove_block() {
+  local file=$1
+  local temporary
+  [[ -f $file ]] || return 0
+  temporary=$(mktemp)
+  awk '
+    $0 == "-- omarchy-t2:performance:start" { skip = 1; next }
+    $0 == "-- omarchy-t2:performance:end" { skip = 0; next }
+    !skip { print }
+  ' "$file" >"$temporary"
+  install -m0644 "$temporary" "$file"
+  rm -f "$temporary"
+}
+
+cmd_performance() {
+  local action=${1:-status}
+  local file
+  file=$(performance_config)
+  case $action in
+  status)
+    [[ $# == 1 ]] || die "usage: omarchy-t2 performance [status | on | off]"
+    if [[ -f $file ]] && grep -Fq -- '-- omarchy-t2:performance:start' "$file"; then
+      echo on
+    else
+      echo off
+    fi
+    ;;
+  on)
+    [[ $# == 1 ]] || die "usage: omarchy-t2 performance [status | on | off]"
+    [[ -f $file ]] || die "Hyprland config not found: $file"
+    backup_user_file "$file"
+    performance_remove_block "$file"
+    performance_block >>"$file"
+    hyprctl reload
+    ;;
+  off)
+    [[ $# == 1 ]] || die "usage: omarchy-t2 performance [status | on | off]"
+    performance_remove_block "$file"
+    hyprctl reload
+    ;;
+  *) die "usage: omarchy-t2 performance [status | on | off]" ;;
+  esac
+}
+
 cmd_restore() {
   local assume_yes=false
   local power_service_state=disabled
@@ -1485,6 +1549,7 @@ doctor) cmd_doctor ;;
 battery) cmd_battery "$@" ;;
 fan) cmd_fan "$@" ;;
 power) cmd_power "$@" ;;
+performance) cmd_performance "$@" ;;
 input) cmd_input "$@" ;;
 audio) cmd_audio "$@" ;;
 bluetooth) cmd_bluetooth "$@" ;;
