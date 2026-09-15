@@ -53,7 +53,9 @@ pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_text('Test dictation')
                 'wtype': '''#!/usr/bin/python3
 import pathlib,sys,os
 assert sys.argv[1:]==['-']
-pathlib.Path(os.environ['TYPED_OUTPUT']).write_text(sys.stdin.read())
+text=sys.stdin.read()
+assert len(text)<=12
+with pathlib.Path(os.environ['TYPED_OUTPUT']).open('a') as output:output.write(text)
 ''',
             }
             for name, body in programs.items():

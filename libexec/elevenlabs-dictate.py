@@ -29,7 +29,9 @@ def main():
     if result.returncode or not transcript.exists(): raise RuntimeError('Transcription failed. Check ElevenLabs access or connection.')
     text=transcript.read_text().strip()
     if not text:notify('No speech detected.');return
-    subprocess.run(['wtype','-'],input=text,text=True,check=True,timeout=60)
+    # Some clients treat wtype's 14th generated keycode as Backspace.
+    for start in range(0,len(text),12):
+        subprocess.run(['wtype','-'],input=text[start:start+12],text=True,check=True,timeout=60)
     notify('Transcript typed')
 
 try:main()
