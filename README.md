@@ -39,9 +39,9 @@ omarchy-t2 setup --dry-run
 - Optional Qwen3-TTS reading on the Radeon through Vulkan, or ElevenLabs cloud TTS
 - Optional ElevenLabs Scribe v2 toggle dictation
 
-The DSP input stays at 100%; a packaged PipeWire link-group resolver
-makes Omarchy's panel and media keys adjust the physical Apple speaker sink,
-which starts at 100%.
+The DSP input stays at 100%. Its output node follows Omarchy's DSP naming
+contract, with a packaged link-group resolver as a fallback, so the panel and
+media keys adjust the physical Apple speaker sink, which starts at 100%.
 Microphone selection remains automatic: external microphones take precedence
 when connected, with the processed internal microphone as the fallback.
 The internal microphone DSP stays pinned to the built-in array and waits if

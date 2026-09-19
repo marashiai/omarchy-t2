@@ -3,7 +3,8 @@
 @@ -235,10 +235,10 @@
  
              playback.props = {
-                 node.name = "effect_output.filter-chain-speakers"
+-                node.name = "effect_output.filter-chain-speakers"
++                node.name = "effect_input.filter-chain-speakers.output"
 -                node.target = "alsa_output.pci-0000_04_00.3.Speakers"
 +                target.object = "alsa_output.pci-0000_04_00.3.HiFi__Speaker__sink"
                  node.passive = true

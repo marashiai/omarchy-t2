@@ -119,6 +119,9 @@ assert_link_target \
 assert_link_target \
   "$root/usr/share/omarchy-t2/uwsm/20-omarchy-t2-gpu" \
   /usr/share/omarchy/default/uwsm/env-hyprland.d/20-omarchy-t2-gpu
+assert_file_contains \
+  "$root/usr/share/omarchy-t2/audio/10-omarchy-t2-speakers.conf" \
+  'node.name = "effect_input.filter-chain-speakers.output"'
 
 printf 'MacBookPro16,1\n' >"$root/sys/devices/virtual/dmi/id/product_name"
 printf '100\n' >"$root/sys/devices/platform/APP0001:00/battery_charge_limit"
